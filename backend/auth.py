@@ -1,15 +1,8 @@
 from flask import Blueprint, request, session, jsonify
-from werkzeug.security import generate_password_hash, check_password_hash
+# from werkzeug.security import generate_password_hash, check_password_hash
+from db_config import get_db_connection
 
 auth = Blueprint('auth', __name__)
-
-users = {
-    "test@uva.edu": {
-        "password_hash": generate_password_hash("password123"),
-        "name": "Jenny Schilling",
-        "role": "Athlete"
-    }
-}
 
 @auth.route('/login', methods=['POST'])
 def login():
@@ -17,21 +10,32 @@ def login():
     email = data.get('email')
     password = data.get('password')
 
-    user = users.get(email)
-    if not user or not check_password_hash(user["password_hash"], password):
-        return jsonify({"error": "Invalid credentials"}), 401
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id, first_name, last_name, dob, gender, password_hash, phone, role FROM Users WHERE email = %s", (email,))
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
 
-    session['user'] = {"email": email, "name": user["name"], "role": user["role"]}
-    return jsonify({"message": "Logged in", "user": session["user"]})
-
-@auth.route('/logout', methods=['POST'])
-def logout():
-    session.pop('user', None)
-    return jsonify({"message": "Logged out"})
-
-@auth.route('/current-user', methods=['GET'])
-def current_user():
-    user = session.get('user')
     if not user:
-        return jsonify({"error": "Not logged in"}), 401
-    return jsonify(user)
+        return jsonify({"error": "Invalid email"}), 401
+
+    user_id, first_name, last_name, dob, gender, password_hash, phone, role = user
+
+    # TODO: need to use actual hashes for the passwords
+    # if not check_password_hash(password_hash, password):
+    #     return jsonify({"error": "Incorrect password"}), 401
+    if password_hash != password:
+        return jsonify({"error": "Incorrect password"}), 401
+
+    session['user'] = {
+        "user_id": user_id,
+        "email": email,
+        "name": f"{first_name} {last_name}",
+        "role": role,
+        "dob": dob,
+        "gender": gender,
+        "phone": phone
+    }
+
+    return jsonify({"message": "Logged in", "user": session["user"]})
